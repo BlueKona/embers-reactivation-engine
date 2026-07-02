@@ -1,0 +1,180 @@
+{
+  "name": "Embers — Closed-Lost Reactivation Engine (Portfolio Demo)",
+  "nodes": [
+    {
+      "id": "0feb9920-1441-4ac7-a8ce-b44b495ac52d",
+      "name": "CRM: Deal Closed-Lost",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 96],
+      "parameters": {},
+      "notes": "Stand-in for a CRM automation trigger (e.g., HubSpot workflow firing when a deal hits Closed-Lost with reason = timing/budget). Manual here so the demo runs on click."
+    },
+    {
+      "id": "0ea408a3-4592-445b-a668-fb99a13e40e9",
+      "name": "Set CRM Deal Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [224, 96],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "a1", "name": "company_name", "value": "Cascade Metalworks", "type": "string" },
+            { "id": "a2", "name": "company_domain", "value": "cascademetalworks.com", "type": "string" },
+            { "id": "a3", "name": "contact_name", "value": "Priya Raman", "type": "string" },
+            { "id": "a4", "name": "contact_title", "value": "Maintenance Manager", "type": "string" },
+            { "id": "a5", "name": "contact_linkedin_url", "value": "https://linkedin.com/in/priya-raman-maint", "type": "string" },
+            { "id": "a6", "name": "deal_value", "value": 36000, "type": "number" },
+            { "id": "a7", "name": "loss_reason", "value": "budget freeze — capex pushed to next FY", "type": "string" },
+            { "id": "a8", "name": "closed_lost_date", "value": "2026-01-16", "type": "string" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6da83518-ba1b-47d2-873d-b5de7a3e606f",
+      "name": "Clay: Enrich Account Signals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [448, 96],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.clay.com/v1/sources/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"domain\": $json.company_domain, \"signals\": [\"new_hires_90d\", \"job_postings\", \"headcount_growth_6mo\", \"funding_12mo\"]} }}",
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "notes": "Enrichment scaffold. Without a Clay API key this call fails softly (neverError) and the next node injects realistic mock signal data, so the demo always runs green."
+    },
+    {
+      "id": "dfe03ec7-a52a-44cf-bfdc-381e39074ac9",
+      "name": "Score Reentry Signals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [672, 96],
+      "parameters": {
+        "jsCode": "var crm = $('Set CRM Deal Data').first().json;\nvar clay = $input.first().json;\nvar e = (clay.status === 'success') ? clay : {\n  new_hires_maintenance: true,\n  new_hire_name: 'Tom Okafor',\n  new_hire_title: 'Maintenance Supervisor',\n  new_hire_days_ago: 34,\n  is_hiring_reliability: true,\n  job_posting_title: 'Reliability Engineer',\n  headcount_6mo_growth_pct: 14.2,\n  funding_last_12mo: false\n};\nvar score = 0;\nvar signals = [];\nif (e.new_hires_maintenance) {\n  score += 30;\n  signals.push('New hire: ' + e.new_hire_name + ' (' + e.new_hire_title + ', ' + e.new_hire_days_ago + 'd ago)');\n}\nif (e.is_hiring_reliability) {\n  score += 25;\n  signals.push('Job posting: ' + e.job_posting_title);\n}\nif ((e.headcount_6mo_growth_pct || 0) > 10) {\n  score += 20;\n  signals.push('Headcount growth +' + e.headcount_6mo_growth_pct + '% in 6mo');\n}\nif (e.funding_last_12mo) {\n  score += 15;\n  signals.push('New funding round in last 12 months');\n}\nvar daysSinceClose = Math.floor((Date.now() - new Date(crm.closed_lost_date).getTime()) / 86400000);\nreturn [{ json: {\n  company_name: crm.company_name,\n  company_domain: crm.company_domain,\n  contact_name: crm.contact_name,\n  contact_title: crm.contact_title,\n  contact_linkedin_url: crm.contact_linkedin_url,\n  deal_value: crm.deal_value,\n  loss_reason: crm.loss_reason,\n  reentry_score: score,\n  reentry_ready: score >= 30,\n  top_signal: signals[0] || 'No strong signal detected',\n  all_signals: signals,\n  days_since_close: daysSinceClose\n} }];"
+      }
+    },
+    {
+      "id": "913dc8d8-6d7a-4b9f-8009-86a0749693f0",
+      "name": "Signal Strong Enough?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [896, 96],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [{ "leftValue": "={{ $json.reentry_ready }}", "operator": { "type": "boolean", "operation": "equals" }, "rightValue": true, "id": "sig-ready-check" }],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "61770c6d-971f-4984-8ec3-9283e8cb5d43",
+      "name": "OpenAI: Generate Reactivation Email",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [1120, 0],
+      "parameters": {
+        "resource": "text",
+        "operation": "response",
+        "modelId": { "__rl": true, "mode": "id", "value": "gpt-4o-mini" },
+        "responses": {
+          "values": [
+            { "content": "={{ \"Write a reactivation email (under 120 words) from an Atlas Industrial AE to \" + $json.contact_name + \", \" + $json.contact_title + \" at \" + $json.company_name + \". Context: deal went cold (\" + $json.loss_reason + \"). Signal triggering outreach: \" + $json.top_signal + \". Atlas Industrial prevents unplanned downtime, closes skills gaps, integrates with existing CMMS. Tone: warm and specific. Reference the signal naturally. End with a soft CTA for a 15-min check-in. Body only, no subject line, no signature block or placeholders like [Your Name] — end with the CTA sentence.\" }}" }
+          ]
+        },
+        "simplify": false,
+        "builtInTools": {},
+        "options": {
+          "instructions": "You are a GTM automation assistant for Atlas Industrial, a predictive-maintenance company that helps manufacturing facilities prevent unplanned machine downtime. Write like a senior sales rep — direct, credible, not salesy.",
+          "maxTokens": 300
+        }
+      },
+      "credentials": { "openAiApi": { "name": "REPLACE_WITH_YOUR_OPENAI_CREDENTIAL" } }
+    },
+    {
+      "id": "6fb2e6bc-b612-4303-84ff-b98985cd0352",
+      "name": "Format Reactivation Package",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1472, 0],
+      "parameters": {
+        "jsCode": "var scored = $('Score Reentry Signals').first().json;\nvar openaiResp = $input.first().json;\nvar email = '[Email generation failed — verify OpenAI API key]';\nif (openaiResp.output && openaiResp.output[0] && openaiResp.output[0].content && openaiResp.output[0].content[0]) {\n  email = openaiResp.output[0].content[0].text || email;\n}\nvar signalsText = scored.all_signals.map(function(s) { return '• ' + s; }).join('\\n');\nvar blocks = [\n  { type: 'header', text: { type: 'plain_text', text: 'Reactivation Signal: ' + scored.company_name, emoji: true } },\n  { type: 'section', fields: [\n    { type: 'mrkdwn', text: '*Re-entry Score:* ' + scored.reentry_score + '/100' },\n    { type: 'mrkdwn', text: '*Days Since Close:* ' + scored.days_since_close + ' days' },\n    { type: 'mrkdwn', text: '*Deal Value:* $' + scored.deal_value.toLocaleString() },\n    { type: 'mrkdwn', text: '*Loss Reason:* ' + scored.loss_reason }\n  ]},\n  { type: 'section', text: { type: 'mrkdwn', text: '*Signals Detected:*\\n' + signalsText } },\n  { type: 'divider' },\n  { type: 'section', text: { type: 'mrkdwn', text: '*Generated Email:*\\n>>>' + email } },\n  { type: 'actions', elements: [\n    { type: 'button', action_id: 'mark_contacted', text: { type: 'plain_text', text: 'Mark as Contacted', emoji: true }, style: 'primary', value: 'contacted' }\n  ]}\n];\nreturn [{ json: {\n  company: scored.company_name,\n  contact: scored.contact_name,\n  title: scored.contact_title,\n  contact_linkedin: scored.contact_linkedin_url,\n  deal_value: scored.deal_value,\n  days_since_close: scored.days_since_close,\n  reentry_score: scored.reentry_score,\n  top_signal: scored.top_signal,\n  all_signals: scored.all_signals,\n  loss_reason: scored.loss_reason,\n  generated_email: email,\n  slack_text: 'Reactivation Signal: ' + scored.company_name,\n  slack_blocks: blocks\n} }];"
+      }
+    },
+    {
+      "id": "b5a5588b-1cd9-428c-ab5b-28927b130fb4",
+      "name": "Slack: Fire Reactivation Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.5,
+      "position": [1696, 0],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": { "__rl": true, "mode": "name", "value": "reactivation-signals" },
+        "messageType": "block",
+        "blocksUi": "={{ JSON.stringify({ blocks: $json.slack_blocks }) }}",
+        "text": "={{ $json.slack_text }}",
+        "otherOptions": { "includeLinkToWorkflow": false }
+      },
+      "credentials": { "slackApi": { "name": "REPLACE_WITH_YOUR_SLACK_CREDENTIAL" } }
+    },
+    {
+      "id": "afa2f742-29cc-4718-9192-d7e917fee2af",
+      "name": "Slack: Add to Watch List",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.5,
+      "position": [1184, 192],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": { "__rl": true, "mode": "name", "value": "reactivation-signals" },
+        "text": "={{ \"Watch List Added: \" + $json.company_name + \" | Score: \" + $json.reentry_score + \"/100 (below 30 threshold). No strong signals yet. Deal value: $\" + $json.deal_value + \" | Loss: \" + $json.loss_reason }}",
+        "otherOptions": { "includeLinkToWorkflow": false }
+      },
+      "credentials": { "slackApi": { "name": "REPLACE_WITH_YOUR_SLACK_CREDENTIAL" } }
+    },
+    {
+      "id": "52075f6b-546d-49d0-b7e1-9751d2b31c25",
+      "name": "Read Me First",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, -176],
+      "parameters": {
+        "content": "## Embers — Closed-Lost Reactivation Engine\nSignal watch -> Score -> Generate email via OpenAI -> Route to rep\n\n**Portfolio demo build.** The seller (Atlas Industrial) and all company/contact data are fictional.\n\n**Credentials to wire on import:**\n1. Clay API Key (optional) — Node 3. If unset, Node 4 auto-injects realistic mock enrichment data.\n2. OpenAI API Key — Node 6.\n3. Slack Bot Token — Nodes 8 and 9 (api.slack.com/apps).",
+        "height": 240,
+        "width": 524,
+        "color": 2
+      }
+    }
+  ],
+  "connections": {
+    "CRM: Deal Closed-Lost": { "main": [[{ "node": "Set CRM Deal Data", "type": "main", "index": 0 }]] },
+    "Set CRM Deal Data": { "main": [[{ "node": "Clay: Enrich Account Signals", "type": "main", "index": 0 }]] },
+    "Clay: Enrich Account Signals": { "main": [[{ "node": "Score Reentry Signals", "type": "main", "index": 0 }]] },
+    "Score Reentry Signals": { "main": [[{ "node": "Signal Strong Enough?", "type": "main", "index": 0 }]] },
+    "Signal Strong Enough?": {
+      "main": [
+        [{ "node": "OpenAI: Generate Reactivation Email", "type": "main", "index": 0 }],
+        [{ "node": "Slack: Add to Watch List", "type": "main", "index": 0 }]
+      ]
+    },
+    "OpenAI: Generate Reactivation Email": { "main": [[{ "node": "Format Reactivation Package", "type": "main", "index": 0 }]] },
+    "Format Reactivation Package": { "main": [[{ "node": "Slack: Fire Reactivation Alert", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "portfolio-demo"
+  }
+}
