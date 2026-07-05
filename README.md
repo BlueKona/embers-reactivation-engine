@@ -20,7 +20,7 @@ Circumstances change. Budgets reset, new leaders get hired, plants expand, machi
 
 Being precise about this matters:
 
-- **Built (this repo, runs end to end):** the engine — closed-lost trigger → account enrichment → weighted signal scoring → threshold gate → AI-drafted reactivation email → Slack alert card with one-click outcome logging. The demo GIF above is a real execution. The enrichment step is scaffolded as a Clay HTTP call with a graceful mock-data fallback, so the workflow runs green with no Clay key.
+- **Built (this repo, runs end to end):** the engine — closed-lost trigger → account enrichment → weighted signal scoring → threshold gate → AI-drafted reactivation email → Slack alert card with a one-click *Mark as Contacted* action button. The demo screenshot above is a real execution. The enrichment step is scaffolded as a Clay HTTP call with a graceful mock-data fallback, so the workflow runs green with no Clay key.
 - **Designed (documented below, not built):** the gifting layer, the contact-replacement waterfall, loss-reason analysis from call transcripts, and the holdout-group measurement framework. These are the program the engine was designed to grow into — rails first, program second.
 
 ## The engine
@@ -28,17 +28,17 @@ Being precise about this matters:
 ```
 CRM: Deal Closed-Lost (trigger)
   → Clay: Enrich Account Signals     (HTTP call; mock fallback baked in)
-  → Score Re-entry Signals           (weighted model, threshold ≥ 30)
+  → Score Reentry Signals            (weighted model, threshold ≥ 30)
   → Signal Strong Enough?
        ├─ yes → OpenAI: Generate Reactivation Email
        │          → Format Reactivation Package
-       │          → Slack: Fire Reactivation Alert   (Block Kit card, one-click logging)
+       │          → Slack: Fire Reactivation Alert   (Block Kit card, one-click action button)
        └─ no  → Slack: Add to Watch List
 ```
 
 Scoring as built: **new decision-maker hire +30 · relevant job posting +25 · headcount growth +20 · recent funding +15.** One strong signal or two stacked weak ones clear the bar; weak signals alone never trigger outreach.
 
-The demo scenario: Cascade Metalworks, a $36K deal lost five months ago to a capex freeze. A new Maintenance Supervisor was hired 34 days ago, they're posting for a Reliability Engineer, and headcount is up 14% — score 75/100. The drafted email references the new hire and the budget timing naturally, and the rep gets the full context in one Slack card.
+The demo scenario: Cascade Metalworks, a $36K deal lost five months ago to a capex freeze. A new Maintenance Supervisor was hired 34 days ago, they're posting for a Reliability Engineer, and headcount is up 14% — score 75/100. The drafted email references the new hire and the budget timing naturally, and the rep gets the full context in one Slack card. (The built engine drafts to the contact of record; automatically re-routing to the newly hired leader is part of the designed contact-replacement layer below.)
 
 ## The signal framework
 
@@ -122,7 +122,7 @@ Full assumptions, funnel math, and a three-scenario sensitivity table in [ROI_MO
 - **n8n** — orchestration (workflow in this repo)
 - **Clay** — signal detection + enrichment (scaffolded; mock fallback included)
 - **OpenAI (gpt-4o-mini)** — signal- and loss-aware email drafting
-- **Slack** — rep-facing Block Kit alert with one-click outcome logging
+- **Slack** — rep-facing Block Kit alert with a one-click *Mark as Contacted* action button
 - Designed for: CRM as system of record, call recordings for loss-reason analysis, gifting platform for fulfillment
 
 ## Run it yourself
